@@ -4,7 +4,6 @@ var path = require("path");
 var cookieParser = require("cookie-parser");
 var logger = require("morgan");
 var passport = require('passport');
-var authenticate = require('./authenticate');
 var config = require('./config');
 
 var indexRouter = require("./routes/index");
@@ -24,6 +23,17 @@ connect.then(
   }
 );
 var app = express();
+
+// Secure traffic only
+app.all('*', (req, res, next) => {
+  if (req.secure) {
+    return next();
+  }
+  else {
+    res.redirect(307, 'https://' + req.hostname + ':' + app.get('secPort') + req.url);
+  }
+});
+
 var session = require("express-session");
 var FileStore = require("session-file-store")(session);
 app.use(
