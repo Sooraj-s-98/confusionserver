@@ -3,26 +3,24 @@ const bodyParser = require("body-parser");
 const Favorites = require("../models/favorites");
 const favoriteRouter = express.Router();
 const verifyUser = require("../authenticate").verifyUser;
+const cors = require("./cors");
 
 favoriteRouter.use(bodyParser.json());
 
 favoriteRouter
   .route("/")
 
-  .get(verifyUser, (req, res, next) => {
+  .get(cors.cors,verifyUser, (req, res, next) => {
     Favorites.find({ user: req.user._id })
       .populate("dishes")
       .populate("user")
       .then(favorites => {
-        res.statusCode = 200;
-        res.setHeader("Content-Type", "application/json");
         res.json(favorites);
-        err => next(err);
       })
       .catch(err => next(err));
   })
 
-  .post(verifyUser, (req, res, next) => {
+  .post(cors.cors,verifyUser, (req, res, next) => {
     /*
       req is an array like this:
       [
@@ -30,8 +28,7 @@ favoriteRouter
         {"_id":  "5bb95873a2c0d37e3662a2a3"}
       ]
       */
-
-    let newDishes = req.body.map(elem => elem._id); // convert array of objs to array of values ["5bb952", "5bb95"]
+     const newDishes = req.body.map(elem => elem._id); // convert array of objs to array of values ["5bb952", "5bb95"]
 
     Favorites.findOne({ user: req.user._id })
       .then(
@@ -40,26 +37,40 @@ favoriteRouter
             Favorites.create({ user: req.user._id })
               .then(favorite => {
                 console.log("New Favorite created ");
-                let oldDishes = [];
+                const oldDishes = [];
                 let dishes = concatDishes(newDishes, oldDishes);
                 favorite.dishes = dishes;
-                favorite.save().then(favorite => {
-                  console.log("dishes added to favorites");
-                  res.statusCode = 200;
-                  res.setHeader("Content-Type", "application/json");
-                  res.json(favorite);
-                });
+                favorite
+                  .save()
+                  .then(favorite => {
+                    Favorites.findById(favorite._id)
+                      .populate("user")
+                      .populate("dishes")
+                      .then(favorite => {
+                        res.json(favorite);
+                      });
+                  })
+                  .catch(err => {
+                    return next(err);
+                  });
               })
               .catch(err => next(err));
           } else {
             let oldDishes = favorite.dishes.map(elem => elem.toString());
             let dishes = concatDishes(newDishes, oldDishes);
             favorite.dishes = dishes;
-            favorite.save().then(favorite => {
-              console.log("dishes added to favorites");
-              res.statusCode = 200;
-              res.setHeader("Content-Type", "application/json");
-              res.json(favorite);
+            favorite
+            .save()
+            .then(favorite => {
+              Favorites.findById(favorite._id)
+                .populate("user")
+                .populate("dishes")
+                .then(favorite => {
+                  res.json(favorite);
+                });
+            })
+            .catch(err => {
+              return next(err);
             });
           }
         },
@@ -67,11 +78,10 @@ favoriteRouter
       )
       .catch(err => next(err));
   })
-  .put(verifyUser, (req, res, next) => {
-    res.statusCode = 403;
-    res.end("PUT operation not supported on /favorites");
+  .put(cors.corsWithOptions, verifyUser, (req, res, next) => {
+    res.status(403).end("PUT operation not supported on /favorites");
   })
-  .delete(verifyUser, (req, res, next) => {
+  .delete(cors.corsWithOptions,verifyUser, (req, res, next) => {
     Favorites.deleteOne({ user: req.user._id })
       .then(
         resp => {
@@ -86,9 +96,27 @@ favoriteRouter
 
 favoriteRouter
   .route("/:dishId")
-  .post(verifyUser, (req, res, next) => {
+  .get(cors.cors, verifyUser, (req, res, next) => {
+    Favorites.findOne({ user: req.user._id })
+      .then(
+        favorites => {
+          if (!favorites) {
+            return res.json({ exists: false, favorites: favorites });
+          } else {
+            if (favorites.dishes.indexOf(req.params.dishId) < 0) {
+              return res.json({ exists: false, favorites: favorites });
+            } else {
+              return res.json({ exists: true, favorites: favorites });
+            }
+          }
+        },
+        err => next(err)
+      )
+      .catch(err => next(err));
+  })
+  .post(cors.corsWithOptions, verifyUser, (req, res, next) => {
     // we well apply logic from route "/", insted of req.body we will use req.params.dishId
-    let newDishes = [req.params.dishId];
+
     // we converted single dish to array for emplement logic from route post to "/favorites"
     Favorites.findOne({ user: req.user._id })
       .then(
@@ -97,38 +125,49 @@ favoriteRouter
             Favorites.create({ user: req.user._id })
               .then(favorite => {
                 console.log("New Favorite created ");
-                let oldDishes = [];
-                let dishes = concatDishes(newDishes, oldDishes);
-                favorite.dishes = dishes;
-                favorite.save().then(favorite => {
-                  console.log("dish added to favorites");
-                  res.statusCode = 200;
-                  res.setHeader("Content-Type", "application/json");
-                  res.json(favorite);
-                });
+                favorite.dishes.push(req.params.dishId);
+                favorite
+                  .save()
+                  .then(favorite => {
+                    Favorites.findById(favorite._id)
+                      .populate("user")
+                      .populate("dishes")
+                      .then(favorite => {
+                        res.json(favorite);
+                      });
+                  })
+                  .catch(err => {
+                    return next(err);
+                  });
               })
               .catch(err => next(err));
           } else {
             let oldDishes = favorite.dishes.map(elem => elem.toString());
             let dishes = concatDishes(newDishes, oldDishes);
             favorite.dishes = dishes;
-            favorite.save().then(favorite => {
-              console.log("dishes added to favorites");
-              res.statusCode = 200;
-              res.setHeader("Content-Type", "application/json");
-              res.json(favorite);
-            });
+            favorite
+              .save()
+              .then(favorite => {
+                Favorites.findById(favorite._id)
+                  .populate("user")
+                  .populate("dishes")
+                  .then(favorite => {
+                    res.json(favorite);
+                  });
+              })
+              .catch(err => {
+                return next(err);
+              });
           }
         },
         err => next(err)
       )
       .catch(err => next(err));
   })
-  .put(verifyUser, (req, res, next) => {
-    res.statusCode = 403;
-    res.end("PUT operation not supported on /favorites/:dishId");
+  .put(cors.corsWithOptions, verifyUser, (req, res, next) => {
+    res.status(403).end("PUT operation not supported on /favorites/:dishId");
   })
-  .delete(verifyUser, (req, res, next) => {
+  .delete(cors.corsWithOptions, verifyUser, (req, res, next) => {
     Favorites.findOne({ user: req.user._id })
       .then(
         favorite => {
@@ -145,10 +184,12 @@ favoriteRouter
               dishes = [...dishes]; // convert set to array
               favorite.dishes = dishes;
               favorite.save().then(favorite => {
-                console.log(`dish ${dishId} deleted from favorites`);
-                res.statusCode = 200;
-                res.setHeader("Content-Type", "application/json");
-                res.json(favorite);
+                Favorites.findById(favorite._id)
+                  .populate("user")
+                  .populate("dishes")
+                  .then(favorite => {
+                    res.json(favorite);
+                  });
               });
             }
           } else {
